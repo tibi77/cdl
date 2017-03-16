@@ -1,0 +1,47 @@
+#!/usr/bin/python3
+
+import sys, os
+import utils as U
+import fileinput
+import itertools
+from operator import itemgetter
+from collections import Counter
+import math
+from datetime import datetime
+
+
+
+
+with open(sys.argv[1]) as f:
+    lines = f.readlines()
+_interval = 1
+_start = None
+_end = None
+_success_filter = ""
+mylist = U.convert_mylist(lines)
+
+for ite in range (2, len (sys.argv)-1):
+    if ( sys.argv[ite] == "--interval" ): 
+        ite+=1
+        _interval = sys.argv[ite]
+    if ( sys.argv[ite] == "--start" ): 
+        ite+=1
+        _start = sys.argv[ite]
+    if ( sys.argv[ite] == "--stop" ): 
+        ite+=1
+        _end = sys.argv[ite]
+
+newlist = U.filter_by_date(mylist, _start, _end, _interval)
+
+
+
+newlist = sorted(newlist, key=itemgetter('datetime'))
+for k, v in itertools.groupby(newlist, key=itemgetter('datetime')): # asta aici e ala ce ordoneaza dupa data
+	v = sorted(v, key=itemgetter('request'))
+	for i, vv in itertools.groupby(v, key=itemgetter('request')):
+                tv=list(vv).copy()
+                tvv=list(tv).copy()
+                success_tc = len ( list (tvv) ) 
+                success_c = sum(Counter(d['status'] \
+                    for d in list(tv) if d['status'][0] == '2').values())
+                print (k, _interval, i,   "%.2f" % float(success_c/success_tc*100))
