@@ -1,47 +1,160 @@
 #!/usr/bin/python3
-
-import sys, os
-import utils as U
 import fileinput
-import itertools
-from operator import itemgetter
-from collections import Counter
-import math
+import datetime
+import argparse
+from copy import deepcopy
+import sys
+from collections import defaultdict
 from datetime import datetime
+from datetime import timedelta
+datetimeFormat='%d %H:%M'
+
+interval_de_la_input = None
+start_interval = None
+end_interval = None
+
+index_arg = 2
+while index_arg <  len(sys.argv):
+	if sys.argv[index_arg] == "--interval":
+		index_arg+=1
+		interval_de_la_input = int(sys.argv[index_arg])
+	elif sys.argv[index_arg] == "--start":
+		index_arg+=1
+		start_interval = datetime.strptime(sys.argv[index_arg], "%Y-%m-%dT%H:%M")
+	elif sys.argv[index_arg] == "--end":
+		index_arg+=1
+		end_interval = datetime.strptime(sys.argv[index_arg], "%Y-%m-%dT%H:%M")
+
+	index_arg += 1
 
 
+def change_time_format( times_temp, num_lines ):
+
+	time=[]
+	for i in range(num_lines):
+		var = datetime.strptime(times_temp[i], '%d/%b/%Y:%H:%M:%S')
+		time.append(var)
+	return time
+
+log_lines = []
+logs = open(sys.argv[1], "r")
+num_lines = 0
+times_temp = []
+end_point = []
+status_code = []
+
+for line in logs.readlines():
+	log_lines.append(line.split()) 
+	num_lines = num_lines+1
 
 
-with open(sys.argv[1]) as f:
-    lines = f.readlines()
-_interval = 1
-_start = None
-_end = None
-_success_filter = ""
-mylist = U.convert_mylist(lines)
+for i in range(num_lines):
+	times_temp.append(log_lines[i][3].split('[')[1])
+	end_point.append(log_lines[i][6].split("html")[0]+"html")
+	status_code.append(log_lines[i][8])
 
-for ite in range (2, len (sys.argv)-1):
-    if ( sys.argv[ite] == "--interval" ): 
-        ite+=1
-        _interval = sys.argv[ite]
-    if ( sys.argv[ite] == "--start" ): 
-        ite+=1
-        _start = sys.argv[ite]
-    if ( sys.argv[ite] == "--stop" ): 
-        ite+=1
-        _end = sys.argv[ite]
+time = []
+time = change_time_format(times_temp, num_lines)
 
-newlist = U.filter_by_date(mylist, _start, _end, _interval)
+if start_interval != None:
+	i = 0
+	new_list = []
+	while i < num_lines:
+		if time[i] >= start_interval:
+			new_list.append(i)
+		i += 1
+
+	time = [time[i] for i in new_list]
+	end_point = [end_point[i] for i in new_list]
+	status_code = [status_code[i] for i in new_list]
+	num_lines = len(time)
 
 
+if end_interval != None:
+	i = 0
+	new_list = []
+	while i < num_lines:
+		if time[i] <= end_interval:
+			new_list.append(i)
+		i += 1
 
-newlist = sorted(newlist, key=itemgetter('datetime'))
-for k, v in itertools.groupby(newlist, key=itemgetter('datetime')): # asta aici e ala ce ordoneaza dupa data
-	v = sorted(v, key=itemgetter('request'))
-	for i, vv in itertools.groupby(v, key=itemgetter('request')):
-                tv=list(vv).copy()
-                tvv=list(tv).copy()
-                success_tc = len ( list (tvv) ) 
-                success_c = sum(Counter(d['status'] \
-                    for d in list(tv) if d['status'][0] == '2').values())
-                print (k, _interval, i,   "%.2f" % float(success_c/success_tc*100))
+	time = [time[i] for i in new_list]
+	end_point = [end_point[i] for i in new_list]
+	status_code = [status_code[i] for i in new_list]
+	num_lines = len(time)
+
+interval = 1
+if interval_de_la_input != None:
+	interval = interval_de_la_input
+
+info=[]
+to_check = []
+first_interval = 1
+
+seen_times = set()
+
+i = 0
+while i < num_lines:
+	seen_entries = set()
+
+	while i in seen_times and i < num_lines:
+		i += 1
+
+	if i >= num_lines:
+		break
+
+	clock = time[i].replace(second = 0)
+	l = [i]
+
+	seen_entries.add(end_point[i])
+
+	i += 1
+
+	while i < num_lines and (time[i].replace(second = 0) - clock).total_seconds() < first_interval * 60:
+			
+		if i not in seen_times:
+			seen_entries.add(end_point[i])
+			l.append(i)
+		i += 1
+
+	second_i = i
+
+	while i < num_lines and (time[i].replace(second = 0) - clock).total_seconds() < interval * 60:
+		if end_point[i] in seen_entries:
+			l.append(i)
+			seen_times.add(i)
+		i += 1
+
+	i = second_i
+
+	to_check.append(l)
+	
+final = []
+
+for elements in to_check:
+	entries = defaultdict(lambda: [0, 0, 0])
+	for i_element in elements:
+		entries[end_point[i_element]][1] += 1
+
+		if entries[end_point[i_element]][2] == 0:
+			entries[end_point[i_element]][2] = time[i_element]
+
+		if (int(status_code[i_element])<300) and \
+		(int(status_code[i_element])>199):
+			entries[end_point[i_element]][0] += 1
+
+	for element in entries:
+		elem = []
+		elem.append(entries[element][2].replace(second=0))
+		elem.append(element)
+		elem.append(entries[element][1])
+		elem.append(entries[element][0])
+		final.append(deepcopy(elem))
+
+final.sort(key = lambda x: (x[0], x[1]))
+
+for _list in final :
+	print(_list[0].strftime('%Y-%m-%dT%H:%M'),end=" ")
+	print(str(interval) + ' ' + str(_list[1]) , end=' ')
+	print('%.2f' % float(100*_list[3]/_list[2]))
+
